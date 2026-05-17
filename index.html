@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>戳戳笨笨 - 咕噜噜～ AI 对话版</title>
+    <style>
+        * { user-select: none; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; min-height: 100vh; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; overflow-x: hidden; position: relative; }
+        .container { position: relative; width: 300px; height: 350px; }
+        .benben { position: absolute; bottom: 30px; left: 50%; margin-left: -110px; width: 220px; height: 260px; cursor: pointer; transition: transform 0.08s cubic-bezier(0.2, 1.2, 0.8, 1); will-change: transform; }
+        .benben.pressed { transform: scale(0.98, 0.92); }
+        .body { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 200px; height: 240px; background: linear-gradient(180deg, #5b9bd5 0%, #3a7cc3 40%, #2d6aaf 100%); border-radius: 50% 50% 45% 45%; border: 3px solid #2d6aaf; }
+        .belly { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 140px; height: 180px; background: linear-gradient(180deg, #a8d8ea 0%, #7ec8e3 50%, #6bb5d0 100%); border-radius: 48% 48% 42% 42%; transition: all 0.08s cubic-bezier(0.2, 1.2, 0.8, 1); will-change: transform; }
+        .benben.pressed .belly { transform: translateX(-50%) translateY(8px) scale(0.85, 0.82); background: linear-gradient(180deg, #c4e8f5 0%, #9ad5ea 50%, #85c8e0 100%); }
+        .belly-button { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); width: 18px; height: 18px; background: #5ba0c8; border-radius: 50%; box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.15); }
+        .dorsal-fin { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 22px solid transparent; border-right: 22px solid transparent; border-bottom: 55px solid #4a8cc7; border-radius: 30%; }
+        .head { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 160px; height: 150px; background: linear-gradient(180deg, #5b9bd5 0%, #4a8cc7 100%); border-radius: 50%; border: 3px solid #2d6aaf; }
+        .eye { position: absolute; top: 50px; width: 32px; height: 32px; background: #ffffff; border-radius: 50%; border: 2px solid #000000; z-index: 2; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; }
+        .eye.left { left: 44px; }
+        .eye.right { right: 44px; }
+        .pupil { width: 16px; height: 16px; background: #1a1a2e; border-radius: 50%; transition: height 0.08s ease; }
+        .benben.pressed .pupil { height: 6px; width: 16px; }
+        .sleeping .pupil { display: none; }
+        .closed-eye-line { display: none; font-size: 32px; font-weight: bold; color: #1a1a2e; line-height: 1; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .sleeping .closed-eye-line { display: block; }
+        .sleeping .eye::after { content: "💤"; position: absolute; font-size: 24px; top: -34px; left: 0; white-space: nowrap; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
+        .sleeping .right.eye::after { left: 4px; }
+        .mouth { position: absolute; top: 95px; left: 50%; transform: translateX(-50%); width: 30px; height: 12px; border-bottom: 3px solid #2d6aaf; border-radius: 0 0 50% 50%; transition: all 0.08s ease; }
+        .benben.pressed .mouth { width: 42px; border-bottom-width: 4px; }
+        .fin { position: absolute; width: 50px; height: 30px; background: #4a8cc7; border-radius: 50%; border: 2px solid #2d6aaf; transition: transform 0.08s ease; }
+        .fin.left-fin { top: 110px; left: -25px; transform: rotate(-20deg); }
+        .fin.right-fin { top: 110px; right: -25px; transform: rotate(20deg); }
+        .benben.pressed .left-fin { transform: rotate(-40deg) translateY(10px); }
+        .benben.pressed .right-fin { transform: rotate(40deg) translateY(10px); }
+        .bubble { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 28px; color: #7ec8e3; opacity: 0; pointer-events: none; transition: all 0.6s ease; text-shadow: 0 0 3px #1a1a2e; white-space: nowrap; }
+        .bubble.show { opacity: 1; top: -70px; }
+        .bubble.hide { opacity: 0; top: -20px; }
+        .hint { margin-top: 25px; color: #7ec8e3; font-size: 16px; animation: pulse 2s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        .counter { margin-top: 8px; color: #5ba0c8; font-size: 13px; opacity: 0.7; }
+        .particle { position: absolute; pointer-events: none; animation: float-up 0.8s ease-out forwards; font-size: 18px; color: #7ec8e3; }
+        @keyframes float-up { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-120px) scale(0.3); } }
+        .chat-area { margin-top: 30px; width: 280px; background: rgba(255, 255, 255, 0.15); border-radius: 30px; padding: 12px; backdrop-filter: blur(4px); }
+        #chatLog { height: 150px; overflow-y: auto; font-size: 14px; color: #fff; padding: 8px; background: rgba(0, 0, 0, 0.3); border-radius: 20px; margin-bottom: 10px; scroll-behavior: smooth; }
+        #chatLog div { margin: 8px 0; word-break: break-word; }
+        .user-msg { text-align: right; color: #ffd966; }
+        .benben-msg { text-align: left; color: #b0e0ff; }
+        .chat-input-area { display: flex; gap: 8px; }
+        #userInput { flex: 1; background: #fff; border: none; border-radius: 40px; padding: 8px 15px; font-size: 14px; outline: none; font-family: inherit; }
+        #sendBtn { background: #5b9bd5; border: none; border-radius: 40px; padding: 8px 15px; color: white; cursor: pointer; transition: 0.2s; }
+        #sendBtn:active { transform: scale(0.96); background: #3a7cc3; }
+        .thinking { text-align: left; color: #aaa; font-style: italic; }
+        @media (max-width: 400px) { .container { transform: scale(0.85); } .chat-area { width: 260px; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="bubble" id="bubble">咕噜噜～</div>
+    <div class="benben" id="benben">
+        <div class="dorsal-fin"></div>
+        <div class="head">
+            <div class="eye left"><div class="pupil"></div><div class="closed-eye-line">﹏</div></div>
+            <div class="eye right"><div class="pupil"></div><div class="closed-eye-line">﹏</div></div>
+            <div class="mouth"></div>
+        </div>
+        <div class="body">
+            <div class="belly"><div class="belly-button"></div></div>
+            <div class="fin left-fin"></div>
+            <div class="fin right-fin"></div>
+        </div>
+    </div>
+</div>
+<div class="hint">(戳戳笨笨的肚皮～)</div>
+<div class="counter">被戳了 <span id="count">0</span> 次</div>
+<div class="chat-area">
+    <div id="chatLog"></div>
+    <div class="chat-input-area">
+        <input type="text" id="userInput" placeholder="对笨笨说..." autocomplete="off">
+        <button id="sendBtn">咕噜→</button>
+    </div>
+</div>
+<script>
+    const benben = document.getElementById('benben');
+    const bubble = document.getElementById('bubble');
+    const countSpan = document.getElementById('count');
+    const chatLogDiv = document.getElementById('chatLog');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    let count = parseInt(localStorage.getItem('pokeCount') || '0');
+    countSpan.textContent = count;
+
+    // ---------- 午睡模式：凌晨2:00 到 上午9:00（2 ≤ hour < 9）----------
+    function checkSleepMode() {
+        const now = new Date();
+        const hour = now.getHours();
+        return (hour >= 2 && hour < 9);
+    }
+    function updateSleepMode() {
+        if (checkSleepMode()) benben.classList.add('sleeping');
+        else benben.classList.remove('sleeping');
+    }
+    updateSleepMode();
+    setInterval(updateSleepMode, 60000);
+
+    let globalBubbleTimer = null;
+    function showCustomBubble(text, duration = 1200) {
+        if (globalBubbleTimer) clearTimeout(globalBubbleTimer);
+        bubble.classList.remove('show', 'hide');
+        void bubble.offsetHeight;
+        bubble.textContent = text;
+        bubble.classList.add('show');
+        globalBubbleTimer = setTimeout(() => {
+            bubble.classList.remove('show');
+            bubble.classList.add('hide');
+        }, duration);
+    }
+
+    const messages = [
+        '咕噜噜～', '嘤！', '笨笨在呢', '再戳一下嘛～', '咕噜噜噜噜噜噜！',
+        '好舒服～', '嘻嘻，戳到肚脐了', '嘤嘤嘤', '坏鸡也在看你戳笨笨',
+        '咕噜～轻一点啦', '笨笨好喜欢你戳笨笨', '你的博士也在等你哦',
+        '戳戳收到啦', '笨笨乖乖陷下去了', '要开心哦～'
+    ];
+    function getRandomMessage() { return messages[Math.floor(Math.random() * messages.length)]; }
+
+    function createParticle(x, y) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.textContent = ['💙', '✨', '🫧', '🌙', '💤'][Math.floor(Math.random() * 5)];
+        particle.style.left = x + 'px';
+        particle.style.top = y + 'px';
+        document.querySelector('.container').appendChild(particle);
+        setTimeout(() => particle.remove(), 800);
+    }
+
+    let lastPokeTime = 0;
+    let pressTimer = null;
+    let isLongPress = false;
+
+    function addPress() { benben.classList.add('pressed'); }
+    function removePress() { benben.classList.remove('pressed'); }
+
+    function doPokeEffects(e, clientX, clientY) {
+        if (checkSleepMode()) {
+            showCustomBubble('😴 咕噜噜……笨笨困了，明天再戳～', 1500);
+            return;
+        }
+        const now = Date.now();
+        if (lastPokeTime && (now - lastPokeTime) < 300) {
+            showCustomBubble('哎哟～慢一点嘛 💨', 1000);
+        }
+        lastPokeTime = now;
+        count++;
+        countSpan.textContent = count;
+        localStorage.setItem('pokeCount', count);
+        showCustomBubble(getRandomMessage(), 1200);
+        const containerRect = document.querySelector('.container').getBoundingClientRect();
+        let x = clientX - containerRect.left;
+        let y = clientY - containerRect.top;
+        x = Math.min(Math.max(x, 0), containerRect.width);
+        y = Math.min(Math.max(y, 0), containerRect.height);
+        createParticle(x, y);
+        createParticle(x + (Math.random() - 0.5) * 30, y + (Math.random() - 0.5) * 30);
+    }
+
+    function longPressSnore(e) {
+        if (checkSleepMode()) { showCustomBubble('😴 Zzz……', 1200); return; }
+        showCustomBubble('Zzzz 💤 呼噜噜～', 1500);
+        benben.style.transform = 'scale(0.99)';
+        setTimeout(() => benben.style.transform = '', 200);
+    }
+
+    let lastInteractionTime = Date.now();
+    function recordInteraction() { lastInteractionTime = Date.now(); }
+    setInterval(() => {
+        const idleMs = Date.now() - lastInteractionTime;
+        if (idleMs > 30000 && !checkSleepMode()) {
+            showCustomBubble('咕噜～想我了没？🥺', 1800);
+            lastInteractionTime = Date.now();
+        }
+    }, 10000);
+
+    function onPointerDown(e) {
+        if (e.target.closest('.chat-area')) return;
+        e.preventDefault();
+        if (pressTimer) clearTimeout(pressTimer);
+        isLongPress = false;
+        addPress();
+        pressTimer = setTimeout(() => {
+            isLongPress = true;
+            longPressSnore(e);
+            removePress();
+        }, 500);
+    }
+    function onPointerUp(e) {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        removePress();
+        if (!isLongPress && !e.target.closest('.chat-area')) {
+            recordInteraction();
+            let clientX, clientY;
+            if (e.changedTouches) {
+                clientX = e.changedTouches[0].clientX;
+                clientY = e.changedTouches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+            doPokeEffects(e, clientX, clientY);
+        }
+        isLongPress = false;
+    }
+    function onPointerCancel(e) {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        removePress();
+        isLongPress = false;
+    }
+    benben.addEventListener('pointerdown', onPointerDown);
+    benben.addEventListener('pointerup', onPointerUp);
+    benben.addEventListener('pointercancel', onPointerCancel);
+    benben.addEventListener('pointerleave', () => {
+        if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; }
+        removePress();
+        isLongPress = false;
+    });
+
+    // 聊天记录
+    let chatHistory = [];
+    function addMessageToHistory(role, text) {
+        chatHistory.push({ role, text });
+        if (chatHistory.length > 100) chatHistory.shift();
+        localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+        const msgDiv = document.createElement('div');
+        msgDiv.className = role === 'user' ? 'user-msg' : 'benben-msg';
+        msgDiv.innerHTML = role === 'user' ? `你：${text}` : `笨笨：${text}`;
+        chatLogDiv.appendChild(msgDiv);
+        chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
+    }
+    function loadChatHistory() {
+        const stored = localStorage.getItem('chatHistory');
+        if (stored) {
+            try {
+                chatHistory = JSON.parse(stored);
+                chatLogDiv.innerHTML = '';
+                chatHistory.forEach(msg => {
+                    const msgDiv = document.createElement('div');
+                    msgDiv.className = msg.role === 'user' ? 'user-msg' : 'benben-msg';
+                    msgDiv.innerHTML = msg.role === 'user' ? `你：${msg.text}` : `笨笨：${msg.text}`;
+                    chatLogDiv.appendChild(msgDiv);
+                });
+                chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
+            } catch(e) {}
+        } else {
+            addMessageToHistory('benben', '🐟 咕噜噜～戳戳我，也可以跟我说话哟～');
+        }
+    }
+    loadChatHistory();
+
+    async function askBenben(userMessage) {
+        if (!userMessage.trim()) return;
+        recordInteraction();
+        addMessageToHistory('user', userMessage);
+        userInput.value = '';
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.className = 'thinking';
+        thinkingDiv.id = 'thinkingMsg';
+        thinkingDiv.innerText = '笨笨：咕噜噜......';
+        chatLogDiv.appendChild(thinkingDiv);
+        chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
+        try {
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messages: [{ role: 'user', content: userMessage }] })
+            });
+            const data = await response.json();
+            document.getElementById('thinkingMsg')?.remove();
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                const reply = data.choices[0].message.content;
+                addMessageToHistory('benben', reply);
+                const shortReply = reply.slice(0, 12) + (reply.length > 12 ? '…' : '');
+                showCustomBubble(shortReply, 1500);
+            } else {
+                addMessageToHistory('benben', '呜呜，笨笨没听清……再戳戳我说一遍？咕噜噜～');
+            }
+        } catch (err) {
+            document.getElementById('thinkingMsg')?.remove();
+            console.error(err);
+            addMessageToHistory('benben', '网络好像迷路了，等一会儿再戳笨笨试试～');
+        }
+    }
+    sendBtn.addEventListener('click', () => askBenben(userInput.value));
+    userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') askBenben(userInput.value); });
+</script>
+</body>
+</html>
