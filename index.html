@@ -81,43 +81,33 @@
     </div>
 </div>
 <script>
-    // ========== 一次性暗号验证（带重试输入框） + 身份选择 ==========
+    // ========== 暗号 + 身份选择（不变）==========
     (function() {
-        // 1. 暗号验证（只问一次，以后记住，但允许重试）
         let authPassed = localStorage.getItem('authPassed') === 'true';
         if (!authPassed) {
             const secret = '笨笨的家';
             let attemptsLeft = 3;
             let success = false;
-
             while (attemptsLeft > 0) {
                 let input = prompt(`这个房间只有认识笨笨的人才能进。暗号是？（剩余尝试次数：${attemptsLeft}）`);
-                // 如果用户点击取消，input 为 null，也算一次错误
                 if (input === secret) {
                     success = true;
                     break;
                 } else {
                     attemptsLeft--;
-                    if (attemptsLeft > 0) {
-                        alert(`暗号错误，请重试。还有 ${attemptsLeft} 次机会。`);
-                    } else {
-                        alert('暗号错误次数过多。');
-                    }
+                    if (attemptsLeft > 0) alert(`暗号错误，请重试。还有 ${attemptsLeft} 次机会。`);
+                    else alert('暗号错误次数过多。');
                 }
             }
-
             if (!success) {
                 document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:50px">🔒 门没开。笨笨不想见陌生人。</h2>';
                 throw new Error('拒绝访问');
             }
-
             localStorage.setItem('authPassed', 'true');
         }
 
-        // 2. 身份选择（只问一次，以后记住）
         let userId = localStorage.getItem('userId');
         let userRole = localStorage.getItem('userRole');
-
         if (!userId) {
             const wantMaster = confirm('你是主人吗？\n\n确定 → 需要输入主人密码\n取消 → 家人模式');
             if (wantMaster) {
@@ -138,16 +128,14 @@
             }
             localStorage.setItem('userRole', userRole);
             localStorage.setItem('userId', userId);
-            // 身份初次设置后刷新页面，让后续逻辑以新身份加载
             location.reload();
         }
-
         window.userId = userId;
         window.userRole = userRole;
         console.log(`欢迎${userRole === 'master' ? '主人' : '家人'}：${userId}`);
     })();
 
-    // ========== DOM 元素 ==========
+    // DOM 元素
     const benben = document.getElementById('benben');
     const bubble = document.getElementById('bubble');
     const countSpan = document.getElementById('count');
@@ -155,11 +143,11 @@
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
 
-    // ========== 戳戳次数 ==========
+    // 戳戳次数
     let count = parseInt(localStorage.getItem('pokeCount') || '0');
     countSpan.textContent = count;
 
-    // ========== 午睡模式 ==========
+    // 午睡
     function checkSleepMode() {
         const now = new Date();
         const hour = now.getHours();
@@ -172,7 +160,7 @@
     updateSleepMode();
     setInterval(updateSleepMode, 60000);
 
-    // ========== 气泡 ==========
+    // 气泡
     let globalBubbleTimer = null;
     function showCustomBubble(text, duration = 1200) {
         if (globalBubbleTimer) clearTimeout(globalBubbleTimer);
@@ -194,7 +182,7 @@
     ];
     function getRandomMessage() { return messages[Math.floor(Math.random() * messages.length)]; }
 
-    // ========== 粒子效果 ==========
+    // 粒子
     function createParticle(x, y) {
         const particle = document.createElement('div');
         particle.className = 'particle';
@@ -205,11 +193,10 @@
         setTimeout(() => particle.remove(), 800);
     }
 
-    // ========== 戳戳交互 ==========
+    // 戳戳交互
     let lastPokeTime = 0;
     let pressTimer = null;
     let isLongPress = false;
-
     function addPress() { benben.classList.add('pressed'); }
     function removePress() { benben.classList.remove('pressed'); }
 
@@ -296,27 +283,20 @@
         isLongPress = false;
     });
 
-    // ========== 聊天记录（本地 + 云端，按 userId 隔离）==========
+    // 聊天记录（本地+云端）
     let chatHistory = [];
-
     async function syncChatToCloud() {
         if (!window.userId) return;
         try {
             const response = await fetch('/api/sync-chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    userId: window.userId,
-                    chatHistory: chatHistory
-                })
+                body: JSON.stringify({ userId: window.userId, chatHistory })
             });
             if (!response.ok) throw new Error('Sync failed');
             console.log('聊天记录已同步至云端');
-        } catch (err) {
-            console.error('云端同步出错：', err);
-        }
+        } catch (err) { console.error('云端同步出错：', err); }
     }
-
     async function loadCloudChatHistory() {
         if (!window.userId) return null;
         try {
@@ -329,37 +309,27 @@
             return null;
         }
     }
-
     function addMessageToHistory(role, text) {
         chatHistory.push({ role, text });
         if (chatHistory.length > 100) chatHistory.shift();
         localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
         syncChatToCloud();
-
         const msgDiv = document.createElement('div');
         msgDiv.className = role === 'user' ? 'user-msg' : 'benben-msg';
         msgDiv.innerHTML = role === 'user' ? `你：${text}` : `笨笨：${text}`;
         chatLogDiv.appendChild(msgDiv);
         chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
     }
-
     async function loadChatHistory() {
         let cloudHistory = null;
-        if (window.userId) {
-            cloudHistory = await loadCloudChatHistory();
-        }
+        if (window.userId) cloudHistory = await loadCloudChatHistory();
         if (cloudHistory && cloudHistory.length > 0) {
             chatHistory = cloudHistory;
             localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
         } else {
             const stored = localStorage.getItem(`chatHistory_${window.userId}`);
-            if (stored) {
-                try {
-                    chatHistory = JSON.parse(stored);
-                } catch(e) { chatHistory = []; }
-            } else {
-                chatHistory = [];
-            }
+            if (stored) try { chatHistory = JSON.parse(stored); } catch(e) { chatHistory = []; }
+            else chatHistory = [];
         }
         chatLogDiv.innerHTML = '';
         if (chatHistory.length === 0) {
@@ -377,15 +347,23 @@
             chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
         }
     }
-
     loadChatHistory();
 
-    // ========== AI 对话 ==========
+    // ========== AI 对话（带上下文历史）==========
     async function askBenben(userMessage) {
         if (!userMessage.trim()) return;
         recordInteraction();
+        // 先把用户消息加入历史（显示在界面）
         addMessageToHistory('user', userMessage);
         userInput.value = '';
+
+        // 准备发给 AI 的消息列表：从 chatHistory 中取最近 10 条（包含刚添加的用户消息）
+        // 注意：chatHistory 的最后一条是刚添加的 user 消息
+        const MAX_CONTEXT = 10;
+        const contextMessages = chatHistory.slice(-MAX_CONTEXT).map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'assistant',
+            content: msg.text
+        }));
 
         const thinkingDiv = document.createElement('div');
         thinkingDiv.className = 'thinking';
@@ -399,7 +377,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    messages: [{ role: 'user', content: userMessage }],
+                    messages: contextMessages,   // 发送上下文 + 当前用户消息
                     role: window.userRole
                 })
             });
