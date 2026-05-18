@@ -81,17 +81,34 @@
     </div>
 </div>
 <script>
-    // ========== 一次性暗号验证 + 身份选择 ==========
+    // ========== 一次性暗号验证（支持重试） + 身份选择 ==========
     (function() {
-        // 1. 暗号验证（只问一次，以后记住）
+        // 1. 暗号验证（只问一次，以后记住，但允许重试）
         let authPassed = localStorage.getItem('authPassed') === 'true';
         if (!authPassed) {
             const secret = '笨笨的家';
-            let input = prompt('这个房间只有认识笨笨的人才能进。暗号是？');
-            if (input !== secret) {
+            let maxAttempts = 3;
+            let success = false;
+
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                let input = prompt(`这个房间只有认识笨笨的人才能进。暗号是？（剩余尝试次数：${maxAttempts - attempt + 1}）`);
+                if (input === secret) {
+                    success = true;
+                    break;
+                } else if (attempt < maxAttempts) {
+                    alert(`暗号错误，请重试。还有 ${maxAttempts - attempt} 次机会。`);
+                } else {
+                    alert('暗号错误次数过多。页面将刷新，请重新尝试。');
+                    location.reload();  // 刷新页面重置状态
+                    throw new Error('多次暗号错误，刷新页面');
+                }
+            }
+
+            if (!success) {
                 document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:50px">🔒 门没开。笨笨不想见陌生人。</h2>';
                 throw new Error('拒绝访问');
             }
+
             localStorage.setItem('authPassed', 'true');
         }
 
@@ -119,7 +136,7 @@
             }
             localStorage.setItem('userRole', userRole);
             localStorage.setItem('userId', userId);
-            // 身份初次设置后刷新页面，让后续逻辑以新身份加载（避免变量未初始化）
+            // 身份初次设置后刷新页面，让后续逻辑以新身份加载
             location.reload();
         }
 
@@ -314,7 +331,6 @@
     function addMessageToHistory(role, text) {
         chatHistory.push({ role, text });
         if (chatHistory.length > 100) chatHistory.shift();
-        // 本地存储按 userId 隔离
         localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
         syncChatToCloud();
 
