@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>戳戳笨笨 - 咕噜噜～ AI 对话版</title>
+    <title>戳戳笨笨 - 咕噜噜～</title>
     <style>
         * { user-select: none; -webkit-tap-highlight-color: transparent; }
         body { margin: 0; min-height: 100vh; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; overflow-x: hidden; position: relative; }
@@ -81,6 +81,47 @@
     </div>
 </div>
 <script>
+    // ========== 暗号 + 身份选择 ==========
+    (function() {
+        const secret = '笨笨的家';
+        let input = prompt('这个房间只有认识笨笨的人才能进。暗号是？');
+        if (input !== secret) {
+            document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:50px">🔒 门没开。笨笨不想见陌生人。</h2>';
+            throw new Error('拒绝访问');
+        }
+
+        let userId = localStorage.getItem('userId');
+        let userRole = localStorage.getItem('userRole');
+
+        if (!userId) {
+            const wantMaster = confirm('你是主人吗？\n\n确定 → 需要输入主人密码\n取消 → 家人模式');
+            if (wantMaster) {
+                const masterPassword = prompt('请输入主人密码：');
+                if (masterPassword === 'ryn20031030') {
+                    userRole = 'master';
+                    userId = 'master_iota';
+                } else {
+                    alert('主人密码错误，将进入家人模式');
+                    userRole = 'friend';
+                    userId = prompt('请输入你的昵称（比如“妈妈”、“爸爸”）：');
+                    if (!userId) userId = '家人_' + Math.random().toString(36).substr(2, 6);
+                }
+            } else {
+                userRole = 'friend';
+                userId = prompt('请输入你的昵称（比如“妈妈”、“爸爸”）：');
+                if (!userId) userId = '家人_' + Math.random().toString(36).substr(2, 6);
+            }
+            localStorage.setItem('userRole', userRole);
+            localStorage.setItem('userId', userId);
+            location.reload();
+        }
+
+        window.userId = userId;
+        window.userRole = userRole;
+        console.log(`欢迎${userRole === 'master' ? '主人' : '家人'}：${userId}`);
+    })();
+
+    // ========== DOM 元素 ==========
     const benben = document.getElementById('benben');
     const bubble = document.getElementById('bubble');
     const countSpan = document.getElementById('count');
@@ -88,10 +129,11 @@
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
 
+    // ========== 戳戳次数本地存储 ==========
     let count = parseInt(localStorage.getItem('pokeCount') || '0');
     countSpan.textContent = count;
 
-    // ---------- 午睡模式：凌晨2:00 到 上午9:00（2 ≤ hour < 9）----------
+    // ========== 午睡模式 ==========
     function checkSleepMode() {
         const now = new Date();
         const hour = now.getHours();
@@ -104,6 +146,7 @@
     updateSleepMode();
     setInterval(updateSleepMode, 60000);
 
+    // ========== 气泡 ==========
     let globalBubbleTimer = null;
     function showCustomBubble(text, duration = 1200) {
         if (globalBubbleTimer) clearTimeout(globalBubbleTimer);
@@ -119,12 +162,13 @@
 
     const messages = [
         '咕噜噜～', '嘤！', '笨笨在呢', '再戳一下嘛～', '咕噜噜噜噜噜噜！',
-        '好舒服～', '嘻嘻，戳到肚脐了', '嘤嘤嘤', '坏鸡也在看你戳笨笨',
-        '咕噜～轻一点啦', '笨笨好喜欢你戳笨笨', '你的博士也在等你哦',
+        '好舒服～', '嘻嘻，戳到肚脐了', '嘤嘤嘤', '戳戳笨笨～',
+        '咕噜～轻一点啦', '笨笨好喜欢你戳笨笨', '笨笨也在等你哦',
         '戳戳收到啦', '笨笨乖乖陷下去了', '要开心哦～'
     ];
     function getRandomMessage() { return messages[Math.floor(Math.random() * messages.length)]; }
 
+    // ========== 粒子效果 ==========
     function createParticle(x, y) {
         const particle = document.createElement('div');
         particle.className = 'particle';
@@ -135,6 +179,7 @@
         setTimeout(() => particle.remove(), 800);
     }
 
+    // ========== 戳戳交互 ==========
     let lastPokeTime = 0;
     let pressTimer = null;
     let isLongPress = false;
@@ -225,54 +270,123 @@
         isLongPress = false;
     });
 
-    // 聊天记录
+    // ========== 聊天记录存储（本地+云端，按 userId 隔离）==========
     let chatHistory = [];
+
+    // 云端同步函数
+    async function syncChatToCloud() {
+        if (!window.userId) return;
+        try {
+            const response = await fetch('/api/sync-chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: window.userId,
+                    chatHistory: chatHistory
+                })
+            });
+            if (!response.ok) throw new Error('Sync failed');
+            console.log('聊天记录已同步至云端');
+        } catch (err) {
+            console.error('云端同步出错：', err);
+        }
+    }
+
+    async function loadCloudChatHistory() {
+        if (!window.userId) return null;
+        try {
+            const res = await fetch(`/api/sync-chat?userId=${encodeURIComponent(window.userId)}`);
+            if (res.status === 404) return null;
+            const data = await res.json();
+            return data.chatHistory || null;
+        } catch (err) {
+            console.error('读取云端记录失败：', err);
+            return null;
+        }
+    }
+
+    // 添加一条消息（同时保存到本地和云端）
     function addMessageToHistory(role, text) {
         chatHistory.push({ role, text });
         if (chatHistory.length > 100) chatHistory.shift();
-        localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+        // 本地存储（按 userId 隔离）
+        localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
+        // 异步同步到云端（不阻塞界面）
+        syncChatToCloud();
+
+        // 渲染消息
         const msgDiv = document.createElement('div');
         msgDiv.className = role === 'user' ? 'user-msg' : 'benben-msg';
         msgDiv.innerHTML = role === 'user' ? `你：${text}` : `笨笨：${text}`;
         chatLogDiv.appendChild(msgDiv);
         chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
     }
-    function loadChatHistory() {
-        const stored = localStorage.getItem('chatHistory');
-        if (stored) {
-            try {
-                chatHistory = JSON.parse(stored);
-                chatLogDiv.innerHTML = '';
-                chatHistory.forEach(msg => {
-                    const msgDiv = document.createElement('div');
-                    msgDiv.className = msg.role === 'user' ? 'user-msg' : 'benben-msg';
-                    msgDiv.innerHTML = msg.role === 'user' ? `你：${msg.text}` : `笨笨：${msg.text}`;
-                    chatLogDiv.appendChild(msgDiv);
-                });
-                chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
-            } catch(e) {}
+
+    // 加载聊天记录（优先云端，其次本地）
+    async function loadChatHistory() {
+        let cloudHistory = null;
+        if (window.userId) {
+            cloudHistory = await loadCloudChatHistory();
+        }
+        if (cloudHistory && cloudHistory.length > 0) {
+            chatHistory = cloudHistory;
+            // 同步到本地缓存
+            localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
         } else {
-            addMessageToHistory('benben', '🐟 咕噜噜～戳戳我，也可以跟我说话哟～');
+            // 从本地加载
+            const stored = localStorage.getItem(`chatHistory_${window.userId}`);
+            if (stored) {
+                try {
+                    chatHistory = JSON.parse(stored);
+                } catch(e) { chatHistory = []; }
+            } else {
+                chatHistory = [];
+            }
+        }
+        // 渲染聊天界面
+        chatLogDiv.innerHTML = '';
+        if (chatHistory.length === 0) {
+            // 根据身份显示不同的欢迎语
+            const welcome = window.userRole === 'master'
+                ? '🐟 主人，我等你很久了。'
+                : `🐟 你好呀，${window.userId}。戳戳肚皮聊聊天吧～`;
+            addMessageToHistory('benben', welcome);
+        } else {
+            chatHistory.forEach(msg => {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = msg.role === 'user' ? 'user-msg' : 'benben-msg';
+                msgDiv.innerHTML = msg.role === 'user' ? `你：${msg.text}` : `笨笨：${msg.text}`;
+                chatLogDiv.appendChild(msgDiv);
+            });
+            chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
         }
     }
+
+    // 开始加载历史
     loadChatHistory();
 
+    // ========== AI 对话（已传 role 给后端）==========
     async function askBenben(userMessage) {
         if (!userMessage.trim()) return;
         recordInteraction();
         addMessageToHistory('user', userMessage);
         userInput.value = '';
+
         const thinkingDiv = document.createElement('div');
         thinkingDiv.className = 'thinking';
         thinkingDiv.id = 'thinkingMsg';
         thinkingDiv.innerText = '笨笨：咕噜噜......';
         chatLogDiv.appendChild(thinkingDiv);
         chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
+
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messages: [{ role: 'user', content: userMessage }] })
+                body: JSON.stringify({
+                    messages: [{ role: 'user', content: userMessage }],
+                    role: window.userRole
+                })
             });
             const data = await response.json();
             document.getElementById('thinkingMsg')?.remove();
@@ -290,6 +404,7 @@
             addMessageToHistory('benben', '网络好像迷路了，等一会儿再戳笨笨试试～');
         }
     }
+
     sendBtn.addEventListener('click', () => askBenben(userInput.value));
     userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') askBenben(userInput.value); });
 </script>
