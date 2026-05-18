@@ -81,26 +81,28 @@
     </div>
 </div>
 <script>
-    // ========== 一次性暗号验证（支持重试） + 身份选择 ==========
+    // ========== 一次性暗号验证（带重试输入框） + 身份选择 ==========
     (function() {
         // 1. 暗号验证（只问一次，以后记住，但允许重试）
         let authPassed = localStorage.getItem('authPassed') === 'true';
         if (!authPassed) {
             const secret = '笨笨的家';
-            let maxAttempts = 3;
+            let attemptsLeft = 3;
             let success = false;
 
-            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-                let input = prompt(`这个房间只有认识笨笨的人才能进。暗号是？（剩余尝试次数：${maxAttempts - attempt + 1}）`);
+            while (attemptsLeft > 0) {
+                let input = prompt(`这个房间只有认识笨笨的人才能进。暗号是？（剩余尝试次数：${attemptsLeft}）`);
+                // 如果用户点击取消，input 为 null，也算一次错误
                 if (input === secret) {
                     success = true;
                     break;
-                } else if (attempt < maxAttempts) {
-                    alert(`暗号错误，请重试。还有 ${maxAttempts - attempt} 次机会。`);
                 } else {
-                    alert('暗号错误次数过多。页面将刷新，请重新尝试。');
-                    location.reload();  // 刷新页面重置状态
-                    throw new Error('多次暗号错误，刷新页面');
+                    attemptsLeft--;
+                    if (attemptsLeft > 0) {
+                        alert(`暗号错误，请重试。还有 ${attemptsLeft} 次机会。`);
+                    } else {
+                        alert('暗号错误次数过多。');
+                    }
                 }
             }
 
