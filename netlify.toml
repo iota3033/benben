@@ -4,7 +4,14 @@
 [functions]
   directory = "netlify/functions"
 
+# 先匹配 /api/sync-chat，避免被下面的通配符拦截
+[[redirects]]
+  from = "/api/sync-chat"
+  to = "/.netlify/functions/sync-chat"
+  status = 200
+
+# 其他 /api/* 请求转发给 AI 对话代理
 [[redirects]]
   from = "/api/*"
-  to = "/.netlify/functions/deepseek-proxy/:splat"
+  to = "/.netlify/functions/deepseek-proxy"
   status = 200
