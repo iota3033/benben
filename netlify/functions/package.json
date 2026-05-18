@@ -1,0 +1,7 @@
+{
+  "name": "functions",
+  "version": "1.0.0",
+  "dependencies": {
+    "@netlify/blobs": "^6.5.0"
+  }
+}
