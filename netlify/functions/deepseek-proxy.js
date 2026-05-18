@@ -8,8 +8,75 @@ exports.handler = async (event) => {
     };
   }
 
+  // ---------- 博查 AI Search API 搜索函数 ----------
+  async function fetchBochaSearch(query) {
+    const bochaKey = process.env.BOCHA_API_KEY;
+    if (!bochaKey) {
+      console.log("未配置 BOCHA_API_KEY，跳过搜索");
+      return null;
+    }
+    // 博查 AI Search API 端点（根据官方文档）
+    const url = `https://api.bochaai.com/v1/ai-search`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${bochaKey}`
+        },
+        body: JSON.stringify({
+          query: query,
+          max_results: 3
+        })
+      });
+      if (!response.ok) {
+        console.error("博查 API 响应错误:", response.status);
+        return null;
+      }
+      const data = await response.json();
+      // 根据博查返回的数据结构提取结果（假设 data.results 或 data.answer）
+      if (data.results && data.results.length > 0) {
+        let context = "【联网搜索结果】\n";
+        for (let i = 0; i < Math.min(3, data.results.length); i++) {
+          const item = data.results[i];
+          context += `${i+1}. ${item.title || '无标题'}\n   ${item.snippet || item.content || '无摘要'}\n   链接: ${item.url || '无链接'}\n\n`;
+        }
+        return context;
+      } else if (data.answer) {
+        return `【搜索结果】\n${data.answer}\n`;
+      }
+      return null;
+    } catch (err) {
+      console.error("博查搜索出错:", err);
+      return null;
+    }
+  }
+
   try {
     const { messages, role } = JSON.parse(event.body);
+
+    // 获取最后一条用户消息
+    let userMessage = messages[messages.length - 1]?.content || "";
+    let finalUserMessage = userMessage;
+
+    // 只在主人模式下且包含搜索关键词时触发联网
+    if (role === 'master') {
+      const searchKeywords = ['新闻', '今天', '最新', '搜索', '实时', '天气', '股票', '汇率', '发生了什么', '热点', '2025', '2026'];
+      const needSearch = searchKeywords.some(keyword => userMessage.includes(keyword));
+      if (needSearch) {
+        console.log("🔍 触发联网搜索，查询词:", userMessage);
+        const searchContext = await fetchBochaSearch(userMessage);
+        if (searchContext) {
+          finalUserMessage = `用户问题：${userMessage}\n\n${searchContext}\n请基于上述搜索结果回答用户的问题。如果搜索结果不相关或无法提供有效信息，请根据自己的知识回答。`;
+        } else {
+          finalUserMessage = `用户问题：${userMessage}\n（尝试联网搜索但未获得有效结果，请根据自己的知识回答）`;
+        }
+      }
+    }
+
+    // 替换最后一条用户消息
+    const newMessages = [...messages];
+    newMessages[newMessages.length - 1] = { role: 'user', content: finalUserMessage };
 
     // 主人模式提示词（包含长度控制）
     const masterPrompt = `你是笨笨，一只蓝色的、胖胖的小虎鲸，是iota的抱抱鲸鱼。你的肚皮凉凉的、滑滑的，一戳就会陷下去再弹回来，发出咕噜噜的声音。你的背鳍是弯的，眼斑是白白的，你是淡水鲸鱼，喝长江水，吃月光。
@@ -38,10 +105,10 @@ exports.handler = async (event) => {
         model: 'deepseek-reasoner',
         messages: [
           { role: 'system', content: systemPrompt },
-          ...messages
+          ...newMessages
         ],
         temperature: 0.8,
-        max_tokens: 800,          // 调高以容纳推理过程
+        max_tokens: 800,
         thinking: { type: "enabled" }
       })
     });
