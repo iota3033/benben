@@ -81,15 +81,21 @@
     </div>
 </div>
 <script>
-    // ========== 暗号 + 身份选择 ==========
+    // ========== 一次性暗号验证 + 身份选择 ==========
     (function() {
-        const secret = '笨笨的家';
-        let input = prompt('这个房间只有认识笨笨的人才能进。暗号是？');
-        if (input !== secret) {
-            document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:50px">🔒 门没开。笨笨不想见陌生人。</h2>';
-            throw new Error('拒绝访问');
+        // 1. 暗号验证（只问一次，以后记住）
+        let authPassed = localStorage.getItem('authPassed') === 'true';
+        if (!authPassed) {
+            const secret = '笨笨的家';
+            let input = prompt('这个房间只有认识笨笨的人才能进。暗号是？');
+            if (input !== secret) {
+                document.body.innerHTML = '<h2 style="color:white;text-align:center;margin-top:50px">🔒 门没开。笨笨不想见陌生人。</h2>';
+                throw new Error('拒绝访问');
+            }
+            localStorage.setItem('authPassed', 'true');
         }
 
+        // 2. 身份选择（只问一次，以后记住）
         let userId = localStorage.getItem('userId');
         let userRole = localStorage.getItem('userRole');
 
@@ -113,6 +119,7 @@
             }
             localStorage.setItem('userRole', userRole);
             localStorage.setItem('userId', userId);
+            // 身份初次设置后刷新页面，让后续逻辑以新身份加载（避免变量未初始化）
             location.reload();
         }
 
@@ -129,7 +136,7 @@
     const userInput = document.getElementById('userInput');
     const sendBtn = document.getElementById('sendBtn');
 
-    // ========== 戳戳次数本地存储 ==========
+    // ========== 戳戳次数 ==========
     let count = parseInt(localStorage.getItem('pokeCount') || '0');
     countSpan.textContent = count;
 
@@ -270,10 +277,9 @@
         isLongPress = false;
     });
 
-    // ========== 聊天记录存储（本地+云端，按 userId 隔离）==========
+    // ========== 聊天记录（本地 + 云端，按 userId 隔离）==========
     let chatHistory = [];
 
-    // 云端同步函数
     async function syncChatToCloud() {
         if (!window.userId) return;
         try {
@@ -305,16 +311,13 @@
         }
     }
 
-    // 添加一条消息（同时保存到本地和云端）
     function addMessageToHistory(role, text) {
         chatHistory.push({ role, text });
         if (chatHistory.length > 100) chatHistory.shift();
-        // 本地存储（按 userId 隔离）
+        // 本地存储按 userId 隔离
         localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
-        // 异步同步到云端（不阻塞界面）
         syncChatToCloud();
 
-        // 渲染消息
         const msgDiv = document.createElement('div');
         msgDiv.className = role === 'user' ? 'user-msg' : 'benben-msg';
         msgDiv.innerHTML = role === 'user' ? `你：${text}` : `笨笨：${text}`;
@@ -322,7 +325,6 @@
         chatLogDiv.scrollTop = chatLogDiv.scrollHeight;
     }
 
-    // 加载聊天记录（优先云端，其次本地）
     async function loadChatHistory() {
         let cloudHistory = null;
         if (window.userId) {
@@ -330,10 +332,8 @@
         }
         if (cloudHistory && cloudHistory.length > 0) {
             chatHistory = cloudHistory;
-            // 同步到本地缓存
             localStorage.setItem(`chatHistory_${window.userId}`, JSON.stringify(chatHistory));
         } else {
-            // 从本地加载
             const stored = localStorage.getItem(`chatHistory_${window.userId}`);
             if (stored) {
                 try {
@@ -343,10 +343,8 @@
                 chatHistory = [];
             }
         }
-        // 渲染聊天界面
         chatLogDiv.innerHTML = '';
         if (chatHistory.length === 0) {
-            // 根据身份显示不同的欢迎语
             const welcome = window.userRole === 'master'
                 ? '🐟 主人，我等你很久了。'
                 : `🐟 你好呀，${window.userId}。戳戳肚皮聊聊天吧～`;
@@ -362,10 +360,9 @@
         }
     }
 
-    // 开始加载历史
     loadChatHistory();
 
-    // ========== AI 对话（已传 role 给后端）==========
+    // ========== AI 对话 ==========
     async function askBenben(userMessage) {
         if (!userMessage.trim()) return;
         recordInteraction();
