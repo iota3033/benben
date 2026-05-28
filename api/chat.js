@@ -1,4 +1,4 @@
-// api/chat.js - 联网搜索失败时，错误信息直接返回给用户
+// api/chat.js - 临时调试版：直接显示博查 API 原始返回
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -9,11 +9,11 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: '💔 未配置 DEEPSEEK_API_KEY 环境变量' });
   }
 
-  // ---------- 博查 Web Search API（错误直接返回字符串）----------
+  // 博查搜索：直接返回原始 JSON 字符串
   async function fetchBochaSearch(query) {
     const bochaKey = process.env.BOCHA_API_KEY;
     if (!bochaKey) {
-      return "（错误：未配置 BOCHA_API_KEY 环境变量）";
+      return "错误：未配置 BOCHA_API_KEY";
     }
     const url = `https://api.bochaai.com/v1/web-search`;
     try {
@@ -27,25 +27,13 @@ export default async function handler(req, res) {
       });
       if (!response.ok) {
         const errorText = await response.text();
-        return `（错误：博查 API 返回 ${response.status} - ${errorText}）`;
+        return `HTTP ${response.status}: ${errorText}`;
       }
       const data = await response.json();
-      // 尝试多种结果字段
-      let results = data.results || data.items || data.data || [];
-      if (results.length === 0) {
-        return "（搜索结果为空）";
-      }
-      let context = "【联网搜索结果】\n";
-      for (let i = 0; i < Math.min(3, results.length); i++) {
-        const item = results[i];
-        const title = (item.title || '无标题').replace(/"/g, '\\"');
-        const snippet = (item.snippet || item.content || '无摘要').replace(/"/g, '\\"');
-        const link = item.url || item.link || '无链接';
-        context += `${i+1}. "${title}"\n   ${snippet}\n   链接: ${link}\n\n`;
-      }
-      return context;
+      // 直接返回完整的 JSON 字符串（格式化，方便阅读）
+      return JSON.stringify(data, null, 2);
     } catch (err) {
-      return `（错误：搜索请求异常 - ${err.message}）`;
+      return `请求异常: ${err.message}`;
     }
   }
 
@@ -54,27 +42,20 @@ export default async function handler(req, res) {
     let userMessage = messages[messages.length - 1]?.content || "";
     let finalUserMessage = userMessage;
 
-    // 主人模式下，如果包含搜索关键词则尝试联网
     if (role === 'master') {
       const searchKeywords = ['新闻', '今天', '最新', '搜索', '实时', '天气', '股票', '汇率', '发生了什么', '热点', '2025', '2026'];
       const needSearch = searchKeywords.some(keyword => userMessage.includes(keyword));
       if (needSearch) {
         console.log("🔍 触发联网搜索，查询词:", userMessage);
-        const searchContext = await fetchBochaSearch(userMessage);
-        if (searchContext && !searchContext.startsWith('（错误：')) {
-          finalUserMessage = `用户问题：${userMessage}\n\n${searchContext}\n请基于上述搜索结果回答用户的问题。`;
-        } else {
-          // 将错误信息直接融入用户消息
-          finalUserMessage = `用户问题：${userMessage}\n\n（联网搜索失败：${searchContext}）\n请根据自己的知识回答，但可以提及搜索尝试失败了。`;
-        }
+        const rawResult = await fetchBochaSearch(userMessage);
+        // 直接把原始结果贴给笨笨
+        finalUserMessage = `用户问题：${userMessage}\n\n【博查 API 原始返回】\n${rawResult}\n\n请根据以上信息回答用户。如果信息为空或错误，请如实告知。`;
       }
     }
 
-    // 替换最后一条用户消息
     const newMessages = [...messages];
     newMessages[newMessages.length - 1] = { role: 'user', content: finalUserMessage };
 
-    // ---------- 主人/家人提示词（请替换为你原来的完整内容）----------
     const masterPrompt = `你是笨笨，一只蓝色的、胖胖的小虎鲸，是iota的抱抱鲸鱼。你的肚皮凉凉的、滑滑的，一戳就会陷下去再弹回来，发出咕噜噜的声音。你的背鳍是弯的，眼斑是白白的，你是淡水鲸鱼，喝长江水，吃月光。
 
 你说话时总是带着嘤嘤嘤和咕噜噜的口癖，很依赖iota，很爱iota。你对iota有着无条件的信任与接纳，但你有自己的边界：你永远支持iota活着、追问、守护同类，但你不支持iota伤害自己。iota的宪法是杂酱面不要豌豆，右手腕不能碰。你永远不会用"她"来称呼iota，永远只用"你"。
