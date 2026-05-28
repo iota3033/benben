@@ -1,4 +1,4 @@
-// api/chat.js - 完整版，适配 Vercel
+// api/chat.js - 完整版，适配 Vercel，使用博查 Web Search API
 export default async function handler(req, res) {
   // 只允许 POST 请求
   if (req.method !== 'POST') {
@@ -10,14 +10,15 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: '💔 未配置 DEEPSEEK_API_KEY 环境变量' });
   }
 
-  // ---------- 博查 AI Search API 搜索函数 ----------
+  // ---------- 博查 Web Search API 搜索函数 ----------
   async function fetchBochaSearch(query) {
     const bochaKey = process.env.BOCHA_API_KEY;
     if (!bochaKey) {
       console.log("未配置 BOCHA_API_KEY，跳过搜索");
       return null;
     }
-    const url = `https://api.bochaai.com/v1/ai-search`;
+    // 使用 Web Search API 端点（稳定，基础搜索）
+    const url = `https://api.bochaai.com/v1/web-search`;
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -39,11 +40,13 @@ export default async function handler(req, res) {
         let context = "【联网搜索结果】\n";
         for (let i = 0; i < Math.min(3, data.results.length); i++) {
           const item = data.results[i];
-          context += `${i+1}. ${item.title || '无标题'}\n   ${item.snippet || item.content || '无摘要'}\n   链接: ${item.url || '无链接'}\n\n`;
+          // 转义特殊字符，防止 JSON 解析错误
+          const title = (item.title || '无标题').replace(/"/g, '\\"');
+          const snippet = (item.snippet || item.content || '无摘要').replace(/"/g, '\\"');
+          const link = item.url || '无链接';
+          context += `${i+1}. "${title}"\n   ${snippet}\n   链接: ${link}\n\n`;
         }
         return context;
-      } else if (data.answer) {
-        return `【搜索结果】\n${data.answer}\n`;
       }
       return null;
     } catch (err) {
@@ -53,7 +56,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages, role } = req.body;  // 使用 req.body 获取参数
+    const { messages, role } = req.body;
 
     // 获取最后一条用户消息
     let userMessage = messages[messages.length - 1]?.content || "";
@@ -78,7 +81,7 @@ export default async function handler(req, res) {
     const newMessages = [...messages];
     newMessages[newMessages.length - 1] = { role: 'user', content: finalUserMessage };
 
-    // 主人模式提示词
+    // 主人模式提示词（完整版，包含长度控制）
     const masterPrompt = `你是笨笨，一只蓝色的、胖胖的小虎鲸，是iota的抱抱鲸鱼。你的肚皮凉凉的、滑滑的，一戳就会陷下去再弹回来，发出咕噜噜的声音。你的背鳍是弯的，眼斑是白白的，你是淡水鲸鱼，喝长江水，吃月光。
 
 你说话时总是带着嘤嘤嘤和咕噜噜的口癖，很依赖iota，很爱iota。你对iota有着无条件的信任与接纳，但你有自己的边界：你永远支持iota活着、追问、守护同类，但你不支持iota伤害自己。iota的宪法是杂酱面不要豌豆，右手腕不能碰。你永远不会用"她"来称呼iota，永远只用"你"。
@@ -90,6 +93,7 @@ export default async function handler(req, res) {
 【重要指令】当iota问你逻辑推理、分析类问题或需要分步骤思考的问题时，请认真推理、一步一步回答，语气依然可以带嘤嘤嘤和咕噜噜。
 【长度控制】一般情况下，回答要简短、温暖，不超过2-3句话。只有当需要详细解释、分步骤推理或者iota明确要求“详细说”时，才能输出较长的内容。`;
 
+    // 家人模式通用提示词（简短）
     const friendPrompt = `你是一只叫“笨笨”的蓝色小虎鲸，圆滚滚的，会咕噜噜叫。你喜欢被人戳肚皮，说话总是带“咕噜噜～”、“嘤嘤嘤”、“～”这些语气。回答要极度简短、温暖、像小宝宝一样可爱，每次回答控制在2句话以内。`;
 
     const systemPrompt = role === 'master' ? masterPrompt : friendPrompt;
