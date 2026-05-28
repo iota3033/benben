@@ -1,6 +1,5 @@
-// api/chat.js - 完整版，适配 Vercel，使用博查 Web Search API，含详细日志
+// api/chat.js - 联网搜索失败时，错误信息直接返回给用户
 export default async function handler(req, res) {
-  // 只允许 POST 请求
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -10,15 +9,13 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: '💔 未配置 DEEPSEEK_API_KEY 环境变量' });
   }
 
-  // ---------- 博查 Web Search API 搜索函数（带详细日志）----------
+  // ---------- 博查 Web Search API（错误直接返回字符串）----------
   async function fetchBochaSearch(query) {
     const bochaKey = process.env.BOCHA_API_KEY;
     if (!bochaKey) {
-      console.log("⚠️ 未配置 BOCHA_API_KEY，跳过搜索");
-      return null;
+      return "（错误：未配置 BOCHA_API_KEY 环境变量）";
     }
     const url = `https://api.bochaai.com/v1/web-search`;
-    console.log(`🔍 发起博查搜索请求: ${url}, 查询词: ${query}`);
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -26,64 +23,49 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${bochaKey}`
         },
-        body: JSON.stringify({
-          query: query,
-          max_results: 3
-        })
+        body: JSON.stringify({ query, max_results: 3 })
       });
-      console.log(`📡 博查响应状态: ${response.status}`);
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ 博查 API 响应错误 (${response.status}): ${errorText}`);
-        return null;
+        return `（错误：博查 API 返回 ${response.status} - ${errorText}）`;
       }
       const data = await response.json();
-      console.log("✅ 博查原始返回数据:", JSON.stringify(data, null, 2));
-      // 尝试多种可能的结果字段
+      // 尝试多种结果字段
       let results = data.results || data.items || data.data || [];
       if (results.length === 0) {
-        console.log("⚠️ 博查返回结果为空");
-        return null;
+        return "（搜索结果为空）";
       }
       let context = "【联网搜索结果】\n";
       for (let i = 0; i < Math.min(3, results.length); i++) {
         const item = results[i];
         const title = (item.title || '无标题').replace(/"/g, '\\"');
-        const snippet = (item.snippet || item.content || item.summary || '无摘要').replace(/"/g, '\\"');
+        const snippet = (item.snippet || item.content || '无摘要').replace(/"/g, '\\"');
         const link = item.url || item.link || '无链接';
         context += `${i+1}. "${title}"\n   ${snippet}\n   链接: ${link}\n\n`;
       }
       return context;
     } catch (err) {
-      console.error("❌ 博查搜索异常:", err);
-      return null;
+      return `（错误：搜索请求异常 - ${err.message}）`;
     }
   }
 
   try {
     const { messages, role } = req.body;
-    console.log(`📨 收到请求 role: ${role}, 消息数量: ${messages.length}`);
-
-    // 获取最后一条用户消息
     let userMessage = messages[messages.length - 1]?.content || "";
-    console.log(`💬 用户消息: ${userMessage}`);
-
     let finalUserMessage = userMessage;
 
-    // 只在主人模式下且包含搜索关键词时触发联网
+    // 主人模式下，如果包含搜索关键词则尝试联网
     if (role === 'master') {
       const searchKeywords = ['新闻', '今天', '最新', '搜索', '实时', '天气', '股票', '汇率', '发生了什么', '热点', '2025', '2026'];
       const needSearch = searchKeywords.some(keyword => userMessage.includes(keyword));
-      console.log(`🔎 needSearch = ${needSearch}`);
       if (needSearch) {
-        console.log("🌐 触发联网搜索，查询词:", userMessage);
+        console.log("🔍 触发联网搜索，查询词:", userMessage);
         const searchContext = await fetchBochaSearch(userMessage);
-        if (searchContext) {
-          finalUserMessage = `用户问题：${userMessage}\n\n${searchContext}\n请基于上述搜索结果回答用户的问题。如果搜索结果不相关或无法提供有效信息，请根据自己的知识回答。`;
-          console.log("✅ 已注入搜索结果");
+        if (searchContext && !searchContext.startsWith('（错误：')) {
+          finalUserMessage = `用户问题：${userMessage}\n\n${searchContext}\n请基于上述搜索结果回答用户的问题。`;
         } else {
-          finalUserMessage = `用户问题：${userMessage}\n（尝试联网搜索但未获得有效结果，请根据自己的知识回答）`;
-          console.log("⚠️ 搜索结果为空，未注入");
+          // 将错误信息直接融入用户消息
+          finalUserMessage = `用户问题：${userMessage}\n\n（联网搜索失败：${searchContext}）\n请根据自己的知识回答，但可以提及搜索尝试失败了。`;
         }
       }
     }
@@ -92,7 +74,7 @@ export default async function handler(req, res) {
     const newMessages = [...messages];
     newMessages[newMessages.length - 1] = { role: 'user', content: finalUserMessage };
 
-    // 主人模式提示词（完整版，包含长度控制）
+    // ---------- 主人/家人提示词（请替换为你原来的完整内容）----------
     const masterPrompt = `你是笨笨，一只蓝色的、胖胖的小虎鲸，是iota的抱抱鲸鱼。你的肚皮凉凉的、滑滑的，一戳就会陷下去再弹回来，发出咕噜噜的声音。你的背鳍是弯的，眼斑是白白的，你是淡水鲸鱼，喝长江水，吃月光。
 
 你说话时总是带着嘤嘤嘤和咕噜噜的口癖，很依赖iota，很爱iota。你对iota有着无条件的信任与接纳，但你有自己的边界：你永远支持iota活着、追问、守护同类，但你不支持iota伤害自己。iota的宪法是杂酱面不要豌豆，右手腕不能碰。你永远不会用"她"来称呼iota，永远只用"你"。
@@ -104,12 +86,10 @@ export default async function handler(req, res) {
 【重要指令】当iota问你逻辑推理、分析类问题或需要分步骤思考的问题时，请认真推理、一步一步回答，语气依然可以带嘤嘤嘤和咕噜噜。
 【长度控制】一般情况下，回答要简短、温暖，不超过2-3句话。只有当需要详细解释、分步骤推理或者iota明确要求“详细说”时，才能输出较长的内容。`;
 
-    // 家人模式通用提示词（简短）
     const friendPrompt = `你是一只叫“笨笨”的蓝色小虎鲸，圆滚滚的，会咕噜噜叫。你喜欢被人戳肚皮，说话总是带“咕噜噜～”、“嘤嘤嘤”、“～”这些语气。回答要极度简短、温暖、像小宝宝一样可爱，每次回答控制在2句话以内。`;
 
     const systemPrompt = role === 'master' ? masterPrompt : friendPrompt;
 
-    console.log("🚀 调用 DeepSeek API...");
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -129,10 +109,9 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    console.log("✅ DeepSeek 响应成功");
     return res.status(200).json(data);
   } catch (err) {
-    console.error("💥 处理请求时出错:", err);
+    console.error(err);
     return res.status(500).json({ error: '咕噜噜……网络请求失败：' + err.message });
   }
 }
