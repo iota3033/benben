@@ -1,4 +1,4 @@
-// api/chat.js - 极简稳定版（无颜文字，只保证联网搜索）
+// api/chat.js - 超级调试版：直接返回博查原始数据
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -11,75 +11,50 @@ export default async function handler(req, res) {
 
   async function searchBocha(query) {
     const bochaKey = process.env.BOCHA_API_KEY;
-    if (!bochaKey) return null;
+    if (!bochaKey) return '未配置 BOCHA_API_KEY';
     const url = 'https://api.bochaai.com/v1/web-search';
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${bochaKey}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bochaKey}` },
         body: JSON.stringify({ query, max_results: 3 })
       });
-      if (!response.ok) return null;
+      if (!response.ok) return `HTTP ${response.status}: ${await response.text()}`;
       const data = await response.json();
-      let results = data.results || data.data?.results || [];
-      if (!results.length) return null;
-      let context = '搜索结果：\n';
-      for (let i = 0; i < Math.min(3, results.length); i++) {
-        const item = results[i];
-        context += `${i+1}. ${item.title || '无标题'}\n   ${item.snippet || '无摘要'}\n   链接: ${item.url || '#'}\n\n`;
-      }
-      return context;
+      // 返回原始 JSON 字符串（格式化）
+      return JSON.stringify(data, null, 2);
     } catch (err) {
-      return null;
+      return `异常: ${err.message}`;
     }
   }
 
   try {
     const { messages, role } = req.body;
     let userMessage = messages[messages.length-1]?.content || '';
-    let finalMsg = userMessage;
 
-    if (role === 'master' && /新闻|搜索|今天|最新|实时|天气|热点/.test(userMessage)) {
-      console.log('触发搜索:', userMessage);
-      const searchResult = await searchBocha(userMessage);
-      if (searchResult) {
-        finalMsg = `用户问题：${userMessage}\n\n${searchResult}\n请根据上述搜索结果回答。`;
-      } else {
-        finalMsg = `用户问题：${userMessage}\n（未获得搜索结果，请根据自己知识回答）`;
-      }
+    if (role === 'master' && /搜索|新闻/.test(userMessage)) {
+      const raw = await searchBocha(userMessage);
+      // 直接把原始 JSON 返回给用户，不经过 AI 处理
+      return res.status(200).json({
+        choices: [{ message: { content: `博查 API 返回:\n${raw}` } }]
+      });
     }
 
-    const newMessages = [...messages];
-    newMessages[newMessages.length-1] = { role: 'user', content: finalMsg };
-
-    const systemPrompt = role === 'master'
-      ? '你是笨笨，一只蓝色小虎鲸，会咕噜噜叫。回答简短温暖，带嘤嘤嘤。'
-      : '你是笨笨，回答简短可爱，2句话以内。';
-
+    // 非搜索消息走正常 AI 短回复
+    const systemPrompt = role === 'master' ? '你是笨笨，回答简短，带咕噜噜。' : '你是笨笨，回答简短。';
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...newMessages
-        ],
+        messages: [{ role: 'system', content: systemPrompt }, ...messages],
         temperature: 0.8,
         max_tokens: 600
       })
     });
-
     const data = await response.json();
     return res.status(200).json(data);
   } catch (err) {
-    console.error(err);
     return res.status(500).json({ error: err.message });
   }
 }
