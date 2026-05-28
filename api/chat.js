@@ -1,4 +1,4 @@
-// api/chat.js - 完整版，适配 Vercel，使用博查 Web Search API
+// api/chat.js - 完整版，适配 Vercel，使用博查 Web Search API，含详细日志
 export default async function handler(req, res) {
   // 只允许 POST 请求
   if (req.method !== 'POST') {
@@ -10,15 +10,15 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: '💔 未配置 DEEPSEEK_API_KEY 环境变量' });
   }
 
-  // ---------- 博查 Web Search API 搜索函数 ----------
+  // ---------- 博查 Web Search API 搜索函数（带详细日志）----------
   async function fetchBochaSearch(query) {
     const bochaKey = process.env.BOCHA_API_KEY;
     if (!bochaKey) {
-      console.log("未配置 BOCHA_API_KEY，跳过搜索");
+      console.log("⚠️ 未配置 BOCHA_API_KEY，跳过搜索");
       return null;
     }
-    // 使用 Web Search API 端点（稳定，基础搜索）
     const url = `https://api.bochaai.com/v1/web-search`;
+    console.log(`🔍 发起博查搜索请求: ${url}, 查询词: ${query}`);
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -31,48 +31,59 @@ export default async function handler(req, res) {
           max_results: 3
         })
       });
+      console.log(`📡 博查响应状态: ${response.status}`);
       if (!response.ok) {
-        console.error("博查 API 响应错误:", response.status);
+        const errorText = await response.text();
+        console.error(`❌ 博查 API 响应错误 (${response.status}): ${errorText}`);
         return null;
       }
       const data = await response.json();
-      if (data.results && data.results.length > 0) {
-        let context = "【联网搜索结果】\n";
-        for (let i = 0; i < Math.min(3, data.results.length); i++) {
-          const item = data.results[i];
-          // 转义特殊字符，防止 JSON 解析错误
-          const title = (item.title || '无标题').replace(/"/g, '\\"');
-          const snippet = (item.snippet || item.content || '无摘要').replace(/"/g, '\\"');
-          const link = item.url || '无链接';
-          context += `${i+1}. "${title}"\n   ${snippet}\n   链接: ${link}\n\n`;
-        }
-        return context;
+      console.log("✅ 博查原始返回数据:", JSON.stringify(data, null, 2));
+      // 尝试多种可能的结果字段
+      let results = data.results || data.items || data.data || [];
+      if (results.length === 0) {
+        console.log("⚠️ 博查返回结果为空");
+        return null;
       }
-      return null;
+      let context = "【联网搜索结果】\n";
+      for (let i = 0; i < Math.min(3, results.length); i++) {
+        const item = results[i];
+        const title = (item.title || '无标题').replace(/"/g, '\\"');
+        const snippet = (item.snippet || item.content || item.summary || '无摘要').replace(/"/g, '\\"');
+        const link = item.url || item.link || '无链接';
+        context += `${i+1}. "${title}"\n   ${snippet}\n   链接: ${link}\n\n`;
+      }
+      return context;
     } catch (err) {
-      console.error("博查搜索出错:", err);
+      console.error("❌ 博查搜索异常:", err);
       return null;
     }
   }
 
   try {
     const { messages, role } = req.body;
+    console.log(`📨 收到请求 role: ${role}, 消息数量: ${messages.length}`);
 
     // 获取最后一条用户消息
     let userMessage = messages[messages.length - 1]?.content || "";
+    console.log(`💬 用户消息: ${userMessage}`);
+
     let finalUserMessage = userMessage;
 
     // 只在主人模式下且包含搜索关键词时触发联网
     if (role === 'master') {
       const searchKeywords = ['新闻', '今天', '最新', '搜索', '实时', '天气', '股票', '汇率', '发生了什么', '热点', '2025', '2026'];
       const needSearch = searchKeywords.some(keyword => userMessage.includes(keyword));
+      console.log(`🔎 needSearch = ${needSearch}`);
       if (needSearch) {
-        console.log("🔍 触发联网搜索，查询词:", userMessage);
+        console.log("🌐 触发联网搜索，查询词:", userMessage);
         const searchContext = await fetchBochaSearch(userMessage);
         if (searchContext) {
           finalUserMessage = `用户问题：${userMessage}\n\n${searchContext}\n请基于上述搜索结果回答用户的问题。如果搜索结果不相关或无法提供有效信息，请根据自己的知识回答。`;
+          console.log("✅ 已注入搜索结果");
         } else {
           finalUserMessage = `用户问题：${userMessage}\n（尝试联网搜索但未获得有效结果，请根据自己的知识回答）`;
+          console.log("⚠️ 搜索结果为空，未注入");
         }
       }
     }
@@ -98,6 +109,7 @@ export default async function handler(req, res) {
 
     const systemPrompt = role === 'master' ? masterPrompt : friendPrompt;
 
+    console.log("🚀 调用 DeepSeek API...");
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -117,9 +129,10 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
+    console.log("✅ DeepSeek 响应成功");
     return res.status(200).json(data);
   } catch (err) {
-    console.error(err);
+    console.error("💥 处理请求时出错:", err);
     return res.status(500).json({ error: '咕噜噜……网络请求失败：' + err.message });
   }
 }
