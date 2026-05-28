@@ -1,4 +1,4 @@
-// api/chat.js - 最终修复版（联网搜索稳定，无颜文字）
+// api/chat.js - 带详细日志的修复版
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -11,7 +11,10 @@ export default async function handler(req, res) {
 
   async function searchBocha(query) {
     const bochaKey = process.env.BOCHA_API_KEY;
-    if (!bochaKey) return null;
+    if (!bochaKey) {
+      console.log('BOCHA_API_KEY 未配置');
+      return null;
+    }
     const url = 'https://api.bochaai.com/v1/web-search';
     try {
       const response = await fetch(url, {
@@ -22,22 +25,31 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({ query, max_results: 3 })
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        console.log(`博查响应错误: ${response.status}`);
+        return null;
+      }
       const data = await response.json();
-      // 直接从 data.results 获取（调试版已确认）
+      console.log('博查原始数据 keys:', Object.keys(data));
+      // 调试版显示 data.results 存在
       const results = data.results;
-      if (!results || !results.length) return null;
-      let context = '【搜索结果】\n';
+      if (!results || results.length === 0) {
+        console.log('results 为空或不存在');
+        return null;
+      }
+      console.log(`获取到 ${results.length} 条结果`);
+      let context = '搜索结果：\n';
       for (let i = 0; i < Math.min(3, results.length); i++) {
         const item = results[i];
         const title = item.title || '无标题';
-        const snippet = item.snippet || item.content || '无摘要';
-        const link = item.url || item.link || '无链接';
+        const snippet = item.snippet || '无摘要';
+        const link = item.url || '#';
         context += `${i+1}. ${title}\n   ${snippet}\n   链接: ${link}\n\n`;
       }
+      console.log('搜索结果拼接完成，长度:', context.length);
       return context;
     } catch (err) {
-      console.error(err);
+      console.error('搜索异常:', err);
       return null;
     }
   }
@@ -47,17 +59,18 @@ export default async function handler(req, res) {
     let userMessage = messages[messages.length - 1]?.content || '';
     let finalUserMessage = userMessage;
 
-    // 主人模式：检查是否需要联网搜索
     if (role === 'master') {
       const keywords = ['新闻', '搜索', '今天', '最新', '实时', '天气', '热点'];
       const needSearch = keywords.some(kw => userMessage.includes(kw));
       if (needSearch) {
-        console.log('🔍 触发搜索:', userMessage);
+        console.log('触发搜索:', userMessage);
         const searchResult = await searchBocha(userMessage);
         if (searchResult) {
-          finalUserMessage = `用户问题：${userMessage}\n\n${searchResult}\n请根据上述搜索结果回答用户的问题。`;
+          finalUserMessage = `用户问题：${userMessage}\n\n${searchResult}\n请根据上述搜索结果回答。`;
+          console.log('搜索结果已注入');
         } else {
           finalUserMessage = `用户问题：${userMessage}\n（搜索失败，请根据自己的知识回答）`;
+          console.log('搜索返回空');
         }
       }
     }
